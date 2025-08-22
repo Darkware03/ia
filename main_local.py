@@ -91,9 +91,20 @@ class TokenBrief(BaseModel):
 # =======================
 def build_user_prompt(user_text: str, language: str = "es") -> str:
     return (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"Texto base ({language}):\n\"\"\"{user_text}\"\"\"\n\n"
-        f"Devuelve SOLO el JSON válido."
+        f"Eres un generador de briefs de tokens para Pump.fun.\n"
+        f"Debes responder con un JSON con este esquema EXACTO:\n"
+        f"""{{
+  "name": "",
+  "symbol": "",
+  "description_short": "",
+  "description_long": "",
+  "hashtags": [],
+  "emojis": [],
+  "image_prompt": "",
+  "disclaimers": []
+}}\n"""
+        f"\nTexto base del token en {language}:\n\"\"\"\n{user_text}\n\"\"\"\n"
+        f"\nResponde solo el JSON válido y completo."
     )
 
 def extract_json_block(text: str) -> Optional[dict]:
@@ -206,7 +217,7 @@ async def generate(payload: GenerateIn):
         raise HTTPException(status_code=500, detail=f"Error de ejecución (posible falta de memoria): {rt}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+    print("🧪 RAW GENERATED TEXT:\n", raw)
     parsed = extract_json_block(raw)
     if parsed is None:
         # Intento directo si el modelo devolvió JSON “limpio”
