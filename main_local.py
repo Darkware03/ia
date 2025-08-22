@@ -18,16 +18,23 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("token-brief-api-local")
 
+# Evitar crashes/ruido en Windows
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 # =======================
-# .env
+# .env y configuración
 # =======================
 load_dotenv()
-MODEL_ID = os.getenv("MODEL_ID", "mistralai/Mistral-7B-Instruct").strip()
+
+MODEL_ID = os.getenv("MODEL_ID", "microsoft/Phi-3.5-mini-instruct").strip()
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "600"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.9"))
 HOST = os.getenv("HOST", "0.0.0.0").strip()
 PORT = int(os.getenv("PORT", "3010"))
+
+# Token: usa primero HUGGINGFACE_HUB_TOKEN, luego HF_TOKEN, o credenciales del CLI si no hay
+HF_TOKEN = os.getenv("HUGGINGFACE_HUB_TOKEN") or os.getenv("HF_TOKEN") or ""
 
 SYSTEM_PROMPT = """Eres un generador de briefs de tokens para Pump.fun.
 Devuelve SOLO un JSON válido con este esquema EXACTO:
@@ -53,7 +60,7 @@ Reglas:
 """
 
 # =======================
-# Modelos Pydantic
+# Pydantic models
 # =======================
 class GenerateIn(BaseModel):
     text: str = Field(..., description="Texto base a analizar")
@@ -80,32 +87,7 @@ class TokenBrief(BaseModel):
         return (v or "")[:280]
 
 # =======================
-# Carga del modelo local
-# =======================
-def _get_device_and_dtype():
-    if torch.cuda.is_available():
-        return "cuda", torch.bfloat16
-    # CPU
-    return "cpu", torch.float32
-
-device, dtype = _get_device_and_dtype()
-log.info("Cargando modelo: %s (device=%s, dtype=%s)", MODEL_ID, device, dtype)
-
-try:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
-        torch_dtype=dtype,
-        device_map="auto" if device == "cuda" else None
-    )
-    if device == "cpu":
-        model.to(device)
-except Exception as e:
-    log.exception("Error cargando el modelo local")
-    raise
-
-# =======================
-# Utilidades generación
+# Utilidades
 # =======================
 def build_user_prompt(user_text: str, language: str = "es") -> str:
     return (
@@ -124,21 +106,56 @@ def extract_json_block(text: str) -> Optional[dict]:
     except Exception:
         return None
 
-def generate_locally(user_text: str, language: str = "es") -> str:
-    # Mensajes en formato chat (la mayoría de instruct ya traen plantilla)
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_user_prompt(user_text, language)}
-    ]
-    # apply_chat_template crea el prompt correcto para cada modelo
-    inputs = tokenizer.apply_chat_template(
-        messages,
-        add_generation_prompt=True,
-        tokenize=True,
-        return_tensors="pt"
-    ).to(model.device)
+def _get_device_and_dtype():
+    if torch.cuda.is_available():
+        return "cuda", torch.bfloat16
+    return "cpu", torch.float32
 
-    # Parámetros de generación
+# =======================
+# Carga del modelo local (con fallback fast→slow y attn eager en CPU)
+# =======================
+device, dtype = _get_device_and_dtype()
+log.info("Cargando modelo: %s (device=%s, dtype=%s)", MODEL_ID, device, dtype)
+
+try:
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_ID,
+            use_fast=True,                  # intento rápido primero
+            token=HF_TOKEN or True,         # usa token o login de huggingface-cli
+            trust_remote_code=True
+        )
+    except Exception as e_fast:
+        log.warning("Fallo use_fast=True (%s). Reintentando con use_fast=False …", e_fast)
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_ID,
+            use_fast=False,                 # fallback a slow (requiere sentencepiece)
+            token=HF_TOKEN or True,
+            trust_remote_code=True
+        )
+
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_ID,
+        torch_dtype=dtype,
+        device_map="auto" if device == "cuda" else None,
+        token=HF_TOKEN or True,
+        trust_remote_code=True,
+        attn_implementation="eager"        # evita intentar flash-attn en CPU
+    )
+    if device == "cpu":
+        model.to(device)
+
+except Exception as e:
+    log.exception("Error cargando el modelo local")
+    raise
+
+# =======================
+# Generación
+# =======================
+def generate_locally(user_text: str, language: str = "es") -> str:
+    prompt_text = build_user_prompt(user_text, language)
+    inputs = tokenizer(prompt_text, return_tensors="pt").to(model.device)
+
     gen_kwargs = dict(
         max_new_tokens=MAX_NEW_TOKENS,
         do_sample=True,
@@ -150,17 +167,16 @@ def generate_locally(user_text: str, language: str = "es") -> str:
     )
 
     with torch.no_grad():
-        outputs = model.generate(**inputs, **gen_kwargs)
+        outputs = model.generate(input_ids=inputs["input_ids"], **gen_kwargs)
 
-    # Decodificamos sólo lo generado nuevo
-    gen_tokens = outputs[0][inputs.shape[-1]:]
+    gen_tokens = outputs[0][inputs["input_ids"].shape[-1]:]
     text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
     return text
 
 # =======================
 # FastAPI
 # =======================
-app = FastAPI(title="Token Brief API (local transformers)", version="1.0.0")
+app = FastAPI(title="Token Brief API (local transformers)", version="1.3.0")
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -186,7 +202,7 @@ async def generate(payload: GenerateIn):
     try:
         raw = generate_locally(payload.text, payload.language)
     except RuntimeError as rt:
-        # Error típico: OOM (falta VRAM/RAM)
+        # Error típico: falta de memoria
         raise HTTPException(status_code=500, detail=f"Error de ejecución (posible falta de memoria): {rt}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -219,3 +235,6 @@ async def generate(payload: GenerateIn):
         result = TokenBrief(**parsed)
 
     return result
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main_local:app", host="0.0.0.0", port=3010, reload=True)
