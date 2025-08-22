@@ -1,0 +1,17 @@
+# Framework API
+fastapi
+uvicorn[standard]
+
+# Modelos Hugging Face
+transformers>=4.44.0
+accelerate>=0.33.0
+huggingface_hub>=0.24.0
+safetensors>=0.4.3
+
+# Dependencias para tokenizers (LLaMA/Mistral/Qwen usan SentencePiece y Protobuf)
+sentencepiece
+protobuf
+
+# Utilidades
+python-dotenv
+pydantic
