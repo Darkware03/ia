@@ -44,16 +44,23 @@ def health():
 async def generate(request: GenerationRequest):
     base_text = request.text.strip()
 
-    prompt = f"""A partir del siguiente texto genera un token de memecoin con los siguientes campos, separados por el carácter `|`:
+    prompt = f"""
+    A partir del siguiente texto, genera un token de memecoin con los siguientes campos separados por `|`:
 
-Texto:
-\"\"\"
-{base_text}
-\"\"\"
+    Texto:
+    \"\"\"
+    {base_text}
+    \"\"\"
 
-Responde solo con una línea de texto así:
-name | symbol | description_short | description_long | hashtag1,hashtag2 | emoji1,emoji2 | image_prompt | disclaimer1,disclaimer2
-"""
+    Devuelve exactamente una sola línea con los siguientes campos, en este orden, separados por `|`:
+
+    name | symbol | description_short | description_long | hashtags_separados_por_coma | emojis_separados_por_coma | image_prompt | disclaimers_separados_por_coma
+
+    Ejemplo de formato:
+    el_bufon | BUFON | Meme político viral | Crítica satírica sobre el poder | #humor,#politica | 😂🔥 | Meme de un político en estilo arte pop | No es consejo financiero,Solo entretenimiento
+
+    ❗ No escribas encabezados, ni explicaciones, ni saltos de línea. Solo el contenido de una sola línea separado por `|`. ❗
+    """
 
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
