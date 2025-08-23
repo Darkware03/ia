@@ -83,13 +83,9 @@ Solo devuelve el JSON. No incluyas ninguna explicación, encabezado ni código d
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-        # Extraer primer JSON válido
-        match = re.search(r"\{\s*\"name\".*?\}", generated_text, re.DOTALL)
-        if not match:
-            raise ValueError("El modelo no devolvió JSON válido.")
+      
 
-        response_json = json.loads(generated_text)
-        return JSONResponse(content=response_json)
+        return JSONResponse(content=generated_text)
 
     except Exception as e:
         logger.exception("❌ Error procesando la solicitud:")
