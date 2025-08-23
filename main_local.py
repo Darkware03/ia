@@ -5,7 +5,7 @@ import json
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForCausalLM, TextStreamer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
 # Logging
@@ -45,28 +45,27 @@ def health():
 async def generate(request: GenerationRequest):
     base_text = request.text.strip()
 
-    prompt = f"""
-    A partir del siguiente texto, genera un token de memecoin original.
+    # PROMPT optimizado para forzar JSON válido
+    prompt = f"""Texto:
+\"\"\"
+{base_text}
+\"\"\"
 
-    Debes responder únicamente con un JSON válido en este formato:
-    {{
-      "name": "...",
-      "symbol": "...",
-      "description_short": "...",
-      "description_long": "...",
-      "hashtags": ["...", "..."],
-      "emojis": ["...", "..."],
-      "image_prompt": "...",
-      "disclaimers": ["No es consejo financiero", "Solo para entretenimiento"]
-    }}
+Devuelve únicamente un JSON válido con los siguientes campos completados según el texto anterior:
 
-    Texto:
-    \"\"\"
-    {base_text}
-    \"\"\"
+{{
+  "name": "Nombre original del token",
+  "symbol": "Símbolo corto (3–6 letras)",
+  "description_short": "Resumen divertido y viral",
+  "description_long": "Descripción completa con tono de humor, sátira o crítica social",
+  "hashtags": ["#ejemplo1", "#ejemplo2"],
+  "emojis": ["🔥", "💰"],
+  "image_prompt": "Prompt para IA para generar una imagen del token",
+  "disclaimers": ["No es consejo financiero", "Solo para entretenimiento"]
+}}
 
-    Responde solo con el JSON. No incluyas explicación, introducción ni formato de ejemplo.
-    """
+Solo devuelve el JSON. No incluyas ninguna explicación, encabezado ni código de ejemplo.
+"""
 
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
@@ -84,8 +83,8 @@ async def generate(request: GenerationRequest):
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-        # Extraer JSON usando regex
-        match = re.search(r"\{[\s\S]*?\}", generated_text)
+        # Extraer primer JSON válido
+        match = re.search(r"\{\s*\"name\".*?\}", generated_text, re.DOTALL)
         if not match:
             raise ValueError("El modelo no devolvió JSON válido.")
 
