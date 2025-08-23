@@ -44,23 +44,16 @@ def health():
 async def generate(request: GenerationRequest):
     base_text = request.text.strip()
 
-    # PROMPT optimizado para texto plano separado por comas
-    prompt = f"""A partir del siguiente texto, genera un token de memecoin.
+    prompt = f"""A partir del siguiente texto genera un token de memecoin con los siguientes campos, separados por el carácter `|`:
 
-    Texto:
-    \"\"\"
-    {base_text}
-    \"\"\"
+Texto:
+\"\"\"
+{base_text}
+\"\"\"
 
-    Responde en UNA sola línea con los siguientes valores separados por `|` en este orden:
-
-    name | symbol | description_short | description_long | hashtags separados por `,` | emojis separados por `,` | image_prompt | disclaimers separados por `,`
-
-    Ejemplo:
-    NayibCoin | NAYIB | Token viral | Crítica a la élite salvadoreña | #nayib,#karla | 😂,🇸🇻 | Militar en escuela de élite | No es consejo financiero,Solo para entretenimiento
-
-    Solo escribe la línea. Nada más.
-    """
+Responde solo con una línea de texto así:
+name | symbol | description_short | description_long | hashtag1,hashtag2 | emoji1,emoji2 | image_prompt | disclaimer1,disclaimer2
+"""
 
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
@@ -78,7 +71,7 @@ async def generate(request: GenerationRequest):
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-        # Buscar la primera línea con 8 campos separados por coma
+        # Buscar la línea que contenga exactamente 8 partes separadas por |
         for line in generated_text.splitlines():
             parts = [p.strip() for p in line.split("|")]
             if len(parts) == 8:
@@ -94,7 +87,7 @@ async def generate(request: GenerationRequest):
                 }
                 return JSONResponse(content=result)
 
-        raise ValueError("No se pudo extraer una línea válida del modelo.")
+        raise ValueError("No se encontró una línea válida con 8 campos.")
 
     except Exception as e:
         logger.exception("❌ Error procesando la solicitud:")
@@ -104,9 +97,8 @@ async def generate(request: GenerationRequest):
                 "error": True,
                 "status_code": 502,
                 "detail": {
-                    "message": "El modelo no devolvió una línea válida.",
+                    "message": "El modelo no devolvió una línea válida con 8 campos.",
                     "raw": generated_text if 'generated_text' in locals() else ""
                 }
             }
         )
-
