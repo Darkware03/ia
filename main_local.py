@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import json
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -29,7 +29,6 @@ model = AutoModelForCausalLM.from_pretrained(
 # FastAPI
 app = FastAPI()
 
-
 # Input schema
 class GenerationRequest(BaseModel):
     text: str
@@ -45,26 +44,21 @@ def health():
 async def generate(request: GenerationRequest):
     base_text = request.text.strip()
 
-    # PROMPT optimizado para forzar JSON válido
-    prompt = f"""Texto:
+    # PROMPT optimizado para texto plano separado por comas
+    prompt = f"""A partir del siguiente texto, genera un token de memecoin.
+
+Texto base:
 \"\"\"
 {base_text}
 \"\"\"
 
-Devuelve únicamente un JSON válido con los siguientes campos completados según el texto anterior:
+Devuelve una sola línea con los campos separados por comas, en el siguiente orden:
+name, symbol, description_short, description_long, hashtags, emojis, image_prompt, disclaimers
 
-{{
-  "name": "Nombre original del token",
-  "symbol": "Símbolo corto (3–6 letras)",
-  "description_short": "Resumen divertido y viral",
-  "description_long": "Descripción completa con tono de humor, sátira o crítica social",
-  "hashtags": ["#ejemplo1", "#ejemplo2"],
-  "emojis": ["🔥", "💰"],
-  "image_prompt": "Prompt para IA para generar una imagen del token",
-  "disclaimers": ["No es consejo financiero", "Solo para entretenimiento"]
-}}
+Ejemplo:
+Memetoken, MEME, Token divertido, Este token es solo para reír, #memes #crypto, 😂🔥, ilustración de un meme viral, No es consejo financiero|Solo para entretenimiento
 
-Solo devuelve el JSON. No incluyas ninguna explicación, encabezado ni código de ejemplo.
+Sin encabezados, sin explicaciones, sin saltos de línea. Solo los valores separados por comas, usa "|" para separar elementos dentro de listas (hashtags, emojis, disclaimers).
 """
 
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
@@ -73,7 +67,7 @@ Solo devuelve el JSON. No incluyas ninguna explicación, encabezado ni código d
         with torch.no_grad():
             output = model.generate(
                 **inputs,
-                max_new_tokens=512,
+                max_new_tokens=256,
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.9,
@@ -83,9 +77,23 @@ Solo devuelve el JSON. No incluyas ninguna explicación, encabezado ni código d
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-      
+        # Buscar la primera línea con 8 campos separados por coma
+        for line in generated_text.splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 8:
+                result = {
+                    "name": parts[0],
+                    "symbol": parts[1],
+                    "description_short": parts[2],
+                    "description_long": parts[3],
+                    "hashtags": parts[4].split("|"),
+                    "emojis": parts[5].split("|"),
+                    "image_prompt": parts[6],
+                    "disclaimers": parts[7].split("|"),
+                }
+                return JSONResponse(content=result)
 
-        return JSONResponse(content=generated_text)
+        raise ValueError("No se pudo extraer una línea válida del modelo.")
 
     except Exception as e:
         logger.exception("❌ Error procesando la solicitud:")
@@ -95,8 +103,9 @@ Solo devuelve el JSON. No incluyas ninguna explicación, encabezado ni código d
                 "error": True,
                 "status_code": 502,
                 "detail": {
-                    "message": "El modelo no devolvió JSON válido.",
+                    "message": "El modelo no devolvió una línea válida.",
                     "raw": generated_text if 'generated_text' in locals() else ""
                 }
             }
         )
+
