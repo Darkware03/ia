@@ -71,23 +71,23 @@ name | symbol | description_short | description_long | hashtag1,hashtag2 | emoji
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-        # Buscar la línea que contenga exactamente 8 partes separadas por |
+        # Buscar línea con exactamente 8 pipes (|), es decir 9 partes
         for line in generated_text.splitlines():
-            parts = [p.strip() for p in line.split("|")]
-            if len(parts) == 8:
-                result = {
-                    "name": parts[0],
-                    "symbol": parts[1],
-                    "description_short": parts[2],
-                    "description_long": parts[3],
-                    "hashtags": parts[4].split(","),
-                    "emojis": parts[5].split(","),
-                    "image_prompt": parts[6],
-                    "disclaimers": parts[7].split(","),
-                }
-                return JSONResponse(content=result)
+            if line.count("|") == 8:
+                parts = [part.strip() for part in line.split("|")]
+                if len(parts) == 9:
+                    return JSONResponse(content={
+                        "name": parts[0],
+                        "symbol": parts[1],
+                        "description_short": parts[2],
+                        "description_long": parts[3],
+                        "hashtags": parts[4].split(","),
+                        "emojis": parts[5].split(","),
+                        "image_prompt": parts[6],
+                        "disclaimers": parts[7].split(",")
+                    })
 
-        raise ValueError("No se encontró una línea válida con 8 campos.")
+        raise ValueError("No se encontró una línea válida con separadores |")
 
     except Exception as e:
         logger.exception("❌ Error procesando la solicitud:")
@@ -97,8 +97,9 @@ name | symbol | description_short | description_long | hashtag1,hashtag2 | emoji
                 "error": True,
                 "status_code": 502,
                 "detail": {
-                    "message": "El modelo no devolvió una línea válida con 8 campos.",
+                    "message": "El modelo no devolvió una línea válida con separadores |",
                     "raw": generated_text if 'generated_text' in locals() else ""
                 }
             }
         )
+
