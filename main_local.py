@@ -38,20 +38,28 @@ async def health():
 @app.post("/generate")
 async def generate(request: TokenRequest):
     try:
-        prompt = (
-            "Responde solo con un JSON válido:\n"
-            "{\n"
-            '"name": "",\n'
-            '"symbol": "",\n'
-            '"description_short": "",\n'
-            '"description_long": "",\n'
-            '"hashtags": [],\n'
-            '"emojis": [],\n'
-            '"image_prompt": "",\n'
-            '"disclaimers": []\n'
-            "}\n\n"
-            f"Texto base del token:\n\"\"\"\n{request.text}\n\"\"\""
-        )
+        prompt = f"""
+        Genera un token de memecoin en formato JSON. Llena cada campo con información creativa, divertida o relevante según el texto base. No dejes campos vacíos.
+
+        Formato:
+        {{
+          "name": "Nombre del token",
+          "symbol": "Símbolo corto (3–6 letras)",
+          "description_short": "Resumen atractivo en una línea",
+          "description_long": "Descripción completa de la idea del token",
+          "hashtags": ["#ejemplo", "#token"],
+          "emojis": ["🔥", "💰"],
+          "image_prompt": "Prompt para generar una imagen con IA del token",
+          "disclaimers": ["No es consejo financiero", "Solo para entretenimiento"]
+        }}
+
+        Texto base:
+        \"\"\"
+        {request.text}
+        \"\"\"
+
+        Responde SOLO con el JSON válido.
+        """
 
         inputs = tokenizer(prompt, return_tensors="pt", padding=True).to(model.device)
         outputs = model.generate(
