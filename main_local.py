@@ -79,20 +79,23 @@ async def generate(request: GenerationRequest):
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
         # Buscar línea con exactamente 8 pipes (|), es decir 9 partes
-        for line in generated_text.splitlines():
-            if line.count("|") == 8:
-                parts = [part.strip() for part in line.split("|")]
-                if len(parts) == 9:
-                    return JSONResponse(content={
+        # Buscar primera línea con separadores |
+        lines = generated_text.splitlines()
+        for line in lines:
+            if '|' in line and not line.strip().startswith(("*", "```", "---")):
+                parts = [part.strip() for part in line.strip().split('|')]
+                if len(parts) == 8:
+                    response_json = {
                         "name": parts[0],
                         "symbol": parts[1],
                         "description_short": parts[2],
                         "description_long": parts[3],
-                        "hashtags": parts[4].split(","),
-                        "emojis": parts[5].split(","),
+                        "hashtags": [h.strip() for h in parts[4].split(',') if h.strip()],
+                        "emojis": [e.strip() for e in parts[5].split(',') if e.strip()],
                         "image_prompt": parts[6],
-                        "disclaimers": parts[7].split(",")
-                    })
+                        "disclaimers": [d.strip() for d in parts[7].split(',') if d.strip()]
+                    }
+                    return JSONResponse(content=response_json)
 
         raise ValueError("No se encontró una línea válida con separadores |")
 
