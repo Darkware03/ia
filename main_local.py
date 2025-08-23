@@ -47,19 +47,20 @@ async def generate(request: GenerationRequest):
     # PROMPT optimizado para texto plano separado por comas
     prompt = f"""A partir del siguiente texto, genera un token de memecoin.
 
-Texto base:
-\"\"\"
-{base_text}
-\"\"\"
+    Texto:
+    \"\"\"
+    {base_text}
+    \"\"\"
 
-Devuelve una sola línea con los campos separados por comas, en el siguiente orden:
-name, symbol, description_short, description_long, hashtags, emojis, image_prompt, disclaimers
+    Responde en UNA sola línea con los siguientes valores separados por `|` en este orden:
 
-Ejemplo:
-Memetoken, MEME, Token divertido, Este token es solo para reír, #memes #crypto, 😂🔥, ilustración de un meme viral, No es consejo financiero|Solo para entretenimiento
+    name | symbol | description_short | description_long | hashtags separados por `,` | emojis separados por `,` | image_prompt | disclaimers separados por `,`
 
-Sin encabezados, sin explicaciones, sin saltos de línea. Solo los valores separados por comas, usa "|" para separar elementos dentro de listas (hashtags, emojis, disclaimers).
-"""
+    Ejemplo:
+    NayibCoin | NAYIB | Token viral | Crítica a la élite salvadoreña | #nayib,#karla | 😂,🇸🇻 | Militar en escuela de élite | No es consejo financiero,Solo para entretenimiento
+
+    Solo escribe la línea. Nada más.
+    """
 
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
@@ -79,17 +80,17 @@ Sin encabezados, sin explicaciones, sin saltos de línea. Solo los valores separ
 
         # Buscar la primera línea con 8 campos separados por coma
         for line in generated_text.splitlines():
-            parts = [p.strip() for p in line.split(",")]
-            if len(parts) >= 8:
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) == 8:
                 result = {
                     "name": parts[0],
                     "symbol": parts[1],
                     "description_short": parts[2],
                     "description_long": parts[3],
-                    "hashtags": parts[4].split("|"),
-                    "emojis": parts[5].split("|"),
+                    "hashtags": parts[4].split(","),
+                    "emojis": parts[5].split(","),
                     "image_prompt": parts[6],
-                    "disclaimers": parts[7].split("|"),
+                    "disclaimers": parts[7].split(","),
                 }
                 return JSONResponse(content=result)
 
