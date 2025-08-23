@@ -46,34 +46,26 @@ async def generate(request: GenerationRequest):
     base_text = request.text.strip()
 
     prompt = f"""
-    Instrucciones:
+    A partir del siguiente texto, genera un token de memecoin original.
 
-    1. Crea un token de memecoin a partir del texto que se te da.
-    2. Responde únicamente con un JSON válido.
-    3. No repitas este ejemplo. Genera contenido nuevo basado en el texto.
+    Debes responder únicamente con un JSON válido en este formato:
+    {{
+      "name": "...",
+      "symbol": "...",
+      "description_short": "...",
+      "description_long": "...",
+      "hashtags": ["...", "..."],
+      "emojis": ["...", "..."],
+      "image_prompt": "...",
+      "disclaimers": ["No es consejo financiero", "Solo para entretenimiento"]
+    }}
 
-    Texto base:
+    Texto:
     \"\"\"
     {base_text}
     \"\"\"
 
-    Responde en el siguiente formato (ejemplo):
-
-    ---
-    {{
-      "name": "Frank Caprio Memecoin",
-      "symbol": "FCAP",
-      "description_short": "Un homenaje viral al juez más compasivo",
-      "description_long": "Este token honra la memoria de Frank Caprio, conocido por su justicia con compasión. Ideal para representar justicia, humor y humanidad.",
-      "hashtags": ["#FrankCaprio", "#memecoin", "#justicia"],
-      "emojis": ["⚖️", "❤️"],
-      "image_prompt": "Ilustración del juez Frank Caprio con un fondo brillante y memes de justicia",
-      "disclaimers": ["No es consejo financiero", "Solo para entretenimiento"]
-    }}
-    ---
-
-    Ahora responde con un nuevo JSON para el texto dado.
-    Solo incluye el JSON. Nada más.
+    Responde solo con el JSON. No incluyas explicación, introducción ni formato de ejemplo.
     """
 
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
