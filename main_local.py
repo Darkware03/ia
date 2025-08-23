@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("token-brief-api-local")
 
 # Config
-MODEL_ID = os.getenv("MODEL_ID", "google/gemma-2b-it")
+MODEL_ID = os.getenv("MODEL_ID", "google/gemma-7b-it")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.bfloat16 if DEVICE.type == "cuda" else torch.float32
 
