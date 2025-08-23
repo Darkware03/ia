@@ -48,7 +48,7 @@ async def generate(request: TokenRequest):
             '"hashtags": [],\n'
             '"emojis": [],\n'
             '"image_prompt": "",\n'
-            '"disclaimers": []\n"
+            '"disclaimers": []\n'
             "}\n\n"
             f"Texto base del token:\n\"\"\"\n{request.text}\n\"\"\""
         )
