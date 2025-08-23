@@ -46,27 +46,35 @@ async def generate(request: GenerationRequest):
     base_text = request.text.strip()
 
     prompt = f"""
-Genera un token de memecoin en formato JSON. Llena cada campo con información creativa, divertida o relevante según el texto base. No dejes campos vacíos.
+    Instrucciones:
 
-Formato:
-{{
-  "name": "Nombre del token",
-  "symbol": "Símbolo corto (3–6 letras)",
-  "description_short": "Resumen atractivo en una línea",
-  "description_long": "Descripción completa de la idea del token",
-  "hashtags": ["#ejemplo", "#token"],
-  "emojis": ["🔥", "💰"],
-  "image_prompt": "Prompt para generar una imagen con IA del token",
-  "disclaimers": ["No es consejo financiero", "Solo para entretenimiento"]
-}}
+    1. Crea un token de memecoin a partir del texto que se te da.
+    2. Responde únicamente con un JSON válido.
+    3. No repitas este ejemplo. Genera contenido nuevo basado en el texto.
 
-Texto base:
-\"\"\"
-{base_text}
-\"\"\"
+    Texto base:
+    \"\"\"
+    {base_text}
+    \"\"\"
 
-Responde SOLO con el JSON válido.
-"""
+    Responde en el siguiente formato (ejemplo):
+
+    ---
+    {{
+      "name": "Frank Caprio Memecoin",
+      "symbol": "FCAP",
+      "description_short": "Un homenaje viral al juez más compasivo",
+      "description_long": "Este token honra la memoria de Frank Caprio, conocido por su justicia con compasión. Ideal para representar justicia, humor y humanidad.",
+      "hashtags": ["#FrankCaprio", "#memecoin", "#justicia"],
+      "emojis": ["⚖️", "❤️"],
+      "image_prompt": "Ilustración del juez Frank Caprio con un fondo brillante y memes de justicia",
+      "disclaimers": ["No es consejo financiero", "Solo para entretenimiento"]
+    }}
+    ---
+
+    Ahora responde con un nuevo JSON para el texto dado.
+    Solo incluye el JSON. Nada más.
+    """
 
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
