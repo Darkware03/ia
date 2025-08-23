@@ -88,7 +88,7 @@ Solo devuelve el JSON. No incluyas ninguna explicación, encabezado ni código d
         if not match:
             raise ValueError("El modelo no devolvió JSON válido.")
 
-        response_json = json.loads(match.group(0))
+        response_json = json.loads(generated_text)
         return JSONResponse(content=response_json)
 
     except Exception as e:
