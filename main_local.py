@@ -41,85 +41,105 @@ def health():
 async def generate(request: GenerationRequest):
     base_text = request.text.strip()
 
+    # === Prompt ultra estricto (7 campos, 6 comas) ===
     prompt = f"""
-    A partir del siguiente texto, genera un token de memecoin con los siguientes campos separados por `|`:
+### INSTRUCCIONES (LEE Y OBEDECE)
+Genera EXACTAMENTE UNA SOLA LÍNEA en formato CSV con **7** campos en este orden:
+name,symbol,description_short,description_long,hashtags_separados_por_coma,emojis_separados_por_coma,disclaimers_separados_por_coma
 
-    Texto:
-    \"\"\" 
-    {base_text}
-    \"\"\"
+REGLAS OBLIGATORIAS:
+- Usa coma "," como separador de campos.
+- NO uses comillas, NO uses barras verticales "|", NO uses saltos de línea extra, NO agregues explicaciones.
+- Si un campo no aplica, deja el campo vacío, pero conserva las comas.
+- DEVUELVE ÚNICAMENTE esa línea CSV **envuelta** entre las etiquetas <csv> y </csv>.
+- No devuelvas nada más fuera de esas etiquetas.
 
-    Devuelve exactamente una sola línea con los siguientes campos es para crear tun token de memecoin, 
-   ❗ No escribas encabezados, ni explicaciones, ni saltos de línea❗
-        en este orden, debe ser siempre separado por comas y no debe devolver nada mas que la informacion 
-        separada en coma en este orden, NO DEVUELVAS NADA MAS:
+### TEXTO
+\"\"\" 
+{base_text}
+\"\"\"
 
-    name , symbol , description_short , description_long , hashtags_separados_por_coma , emojis_separados_por_coma ,  disclaimers_separados_por_coma
-    """
+### RESPUESTA
+<csv>name,symbol,description_short,description_long,hashtags,emojis,disclaimers</csv>
+""".strip()
+
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
     try:
         with torch.no_grad():
             output = model.generate(
                 **inputs,
-                max_new_tokens=256,
+                max_new_tokens=120,      # suficiente para 1 línea
                 do_sample=True,
-                temperature=0.7,
+                temperature=0.5,         # más obediente
                 top_p=0.9,
-                top_k=50
+                top_k=40,
+                repetition_penalty=1.05  # evita repetir el prompt
             )
 
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-        # --- Utilidades de limpieza/chequeo ---
-        def normalize(s: str) -> str:
-            # quita asteriscos/backticks, dobles espacios, y lower-case para comparar
-            s2 = s.replace("`", " ").replace("*", " ")
-            s2 = re.sub(r"\s+", " ", s2).strip().lower()
-            return s2
+        import re
 
-        HEADER_CANON = normalize(
-            "name | symbol | description_short | description_long | "
-            "hashtags_separados_por_coma | emojis_separados_por_coma | "
-            "image_prompt | disclaimers_separados_por_coma"
-        )
+        # --- Utilidad: limpieza mínima ---
+        def clean(s: str) -> str:
+            return re.sub(r"\s+", " ", s).strip().strip("`* ")
 
-        def is_header_line(line: str) -> bool:
-            n = normalize(line)
-            if HEADER_CANON in n:
-                return True
-            if n.startswith("ejemplo de formato"):
-                return True
-            if n.startswith("name | symbol"):
-                return True
-            return False
-
-        def looks_like_token_line(line: str) -> bool:
-            l = line.strip(" `*")
-            return (l.count("|") == 8) and (not is_header_line(l))
-
-        # --- 1) Preferencia: línea justo después de "Token:" ---
-        m = re.search(r"token\s*:\s*\n\s*(.+)", generated_text, flags=re.IGNORECASE)
+        # 1) Preferencia: <csv> ... </csv>
+        m = re.search(r"<csv>(.*?)</csv>", generated_text, flags=re.IGNORECASE | re.DOTALL)
         if m:
-            after_token = m.group(1).strip()
-            # Puede que la línea posterior tenga más texto; separar hasta el fin de línea
-            first_line = after_token.splitlines()[0].strip(" `*")
-            if looks_like_token_line(first_line):
-                return JSONResponse(content={"success": True, "token": first_line})
-
-        # --- 2) Fallback: primera línea en TODO el texto con 8 pipes, excluyendo encabezados ---
-        for raw_line in generated_text.splitlines():
-            line = raw_line.strip(" `*")
-            if looks_like_token_line(line):
+            line = clean(m.group(1))
+            # Validar: 6 comas (=> 7 campos) y sin pipes
+            if line.count(",") == 6 and "|" not in line:
                 return JSONResponse(content={"success": True, "token": line})
 
-        # --- 3) Si nada matchea, devolvemos el raw para inspección (pero sin error 5xx) ---
+        # 2) Fallback: primera línea con exactamente 6 comas y sin pipes
+        for raw_line in generated_text.splitlines():
+            line = clean(raw_line)
+            if line.count(",") == 6 and "|" not in line and not line.lower().startswith(("name , symbol", "name, symbol")):
+                return JSONResponse(content={"success": True, "token": line})
+
+        # 3) Fallback: si vino en pipes con 6 pipes, conviértelo a comas
+        for raw_line in generated_text.splitlines():
+            line = clean(raw_line)
+            if line.count("|") == 6:
+                csv_line = clean(line.replace("|", ","))
+                # Re-validar comas
+                if csv_line.count(",") == 6:
+                    return JSONResponse(content={"success": True, "token": csv_line})
+
+        # 4) Fallback: reconstrucción desde bullets name:, symbol:, ...
+        #    Captura tipo: "name: algo", case-insensitive
+        fields = ["name", "symbol", "description_short", "description_long",
+                  "hashtags_separados_por_coma", "emojis_separados_por_coma",
+                  "disclaimers_separados_por_coma"]
+        found = {}
+        for f in fields:
+            # Busca 'f: valor' hasta fin de línea
+            mm = re.search(rf"{f}\s*:\s*(.+)", generated_text, flags=re.IGNORECASE)
+            if mm:
+                # corta en fin de línea y limpia
+                val = clean(mm.group(1).splitlines()[0])
+                # elimina posibles separadores conflictivos
+                val = val.replace("|", " ").replace("\n", " ").strip()
+                found[f] = val
+
+        if found:
+            row = []
+            for f in fields:
+                row.append(found.get(f, ""))  # vacío si no está
+            csv_line = ",".join(row)
+            # Asegura 6 comas
+            if csv_line.count(",") == 6:
+                return JSONResponse(content={"success": True, "token": csv_line})
+
+        # 5) Último recurso: responde éxito=false con el raw (sin 5xx)
         return JSONResponse(
             status_code=200,
             content={
                 "success": False,
-                "message": "No se encontró una línea válida con separadores `|`.",
+                "message": "No se pudo extraer una línea CSV válida (7 campos).",
                 "raw": generated_text
             }
         )
@@ -127,13 +147,10 @@ async def generate(request: GenerationRequest):
     except Exception:
         logger.exception("❌ Error procesando la solicitud:")
         return JSONResponse(
-            status_code=502,
+            status_code=200,  # evita 5xx, para que tu JS no truene
             content={
-                "error": True,
-                "status_code": 502,
-                "detail": {
-                    "message": "Ocurrió un error inesperado.",
-                    "raw": generated_text if 'generated_text' in locals() else ""
-                }
+                "success": False,
+                "message": "Error inesperado en el servidor de generación.",
+                "raw": generated_text if 'generated_text' in locals() else ""
             }
         )
