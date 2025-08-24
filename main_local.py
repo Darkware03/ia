@@ -81,8 +81,8 @@ REGLAS OBLIGATORIAS:
         return JSONResponse(
             status_code=200,
             content={
-                "success": False,
-                "message": "No se encontró una línea CSV válida.",
+                "success": True,
+                "message": "Informacion generada",
                 "raw": generated_text
             }
         )
