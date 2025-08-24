@@ -79,7 +79,8 @@ async def generate(request: GenerationRequest):
         lines = generated_text.splitlines()
         for line in lines:
             line = line.strip()
-            if line.count("|") == 8 and not any(bloque in line.lower() for bloque in ["token:", "texto:", "**", "---"]):
+            if line.count("|") == 8:
+                line = line.strip(" `*")  # Quita posibles símbolos extra
                 return PlainTextResponse(content=line)
 
         raise ValueError("No se encontró una línea válida con separadores `|`.")
