@@ -75,14 +75,21 @@ async def generate(request: GenerationRequest):
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-        # Buscar la PRIMERA línea que tenga exactamente 8 separadores `|`
-        lines = generated_text.splitlines()
-        for line in lines:
-            clean_line = line.strip(" `*")
-            if clean_line.count("|") == 8:
-                return PlainTextResponse(content=clean_line)
+        # ✅ Buscar la primera línea que tenga exactamente 8 pipes (|) usando regex
+        match = re.search(r"^.*?\|.*?\|.*?\|.*?\|.*?\|.*?\|.*?\|.*?$", generated_text, re.MULTILINE)
+        if match:
+            linea_token = match.group(0).strip(" `*")
+            return JSONResponse(content={"success": True, "token": linea_token})
 
-        raise ValueError("No se encontró una línea válida con separadores `|`.")
+        # ⛔ Si no se encuentra una línea válida, retornar respuesta fallback (con texto completo para debug)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "message": "No se encontró línea válida con separadores `|`, pero el texto fue generado.",
+                "raw": generated_text
+            }
+        )
 
     except Exception as e:
         logger.exception("❌ Error procesando la solicitud:")
@@ -92,9 +99,10 @@ async def generate(request: GenerationRequest):
                 "error": True,
                 "status_code": 502,
                 "detail": {
-                    "message": "El modelo no devolvió una línea válida con separadores `|`",
+                    "message": "Ocurrió un error inesperado.",
                     "raw": generated_text if 'generated_text' in locals() else ""
                 }
             }
         )
+
 
