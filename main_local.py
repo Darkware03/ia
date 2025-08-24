@@ -1,23 +1,22 @@
 import logging
 import os
 import re
-import json
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
-# Logging
+# Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("token-brief-api-local")
 
-# Config
+# Modelo y dispositivo
 MODEL_ID = os.getenv("MODEL_ID", "google/gemma-7b-it")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.bfloat16 if DEVICE.type == "cuda" else torch.float32
 
-# Modelo
+# Cargar tokenizer y modelo
 logger.info(f"Cargando modelo: {MODEL_ID} (device={DEVICE}, dtype={DTYPE})")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 model = AutoModelForCausalLM.from_pretrained(
@@ -26,19 +25,17 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=DTYPE
 )
 
-# FastAPI
+# Crear la app FastAPI
 app = FastAPI()
 
-# Input schema
+# Esquema de entrada
 class GenerationRequest(BaseModel):
     text: str
     language: str = "es"
 
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
 
 @app.post("/generate")
 async def generate(request: GenerationRequest):
@@ -48,7 +45,7 @@ async def generate(request: GenerationRequest):
     A partir del siguiente texto, genera un token de memecoin con los siguientes campos separados por `|`:
 
     Texto:
-    \"\"\"
+    \"\"\" 
     {base_text}
     \"\"\"
 
@@ -78,24 +75,14 @@ async def generate(request: GenerationRequest):
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-        # Buscar línea con exactamente 8 pipes (|), es decir 9 partes
-        # Buscar primera línea con separadores |
+        # Buscar la línea con exactamente 8 separadores "|"
         lines = generated_text.splitlines()
         for line in lines:
             if '|' in line and not line.strip().startswith(("*", "```", "---")):
                 parts = [part.strip() for part in line.strip().split('|')]
                 if len(parts) == 8:
-                    response_json = {
-                        "name": parts[0],
-                        "symbol": parts[1],
-                        "description_short": parts[2],
-                        "description_long": parts[3],
-                        "hashtags": [h.strip() for h in parts[4].split(',') if h.strip()],
-                        "emojis": [e.strip() for e in parts[5].split(',') if e.strip()],
-                        "image_prompt": parts[6],
-                        "disclaimers": [d.strip() for d in parts[7].split(',') if d.strip()]
-                    }
-                    return JSONResponse(content=response_json)
+                    # ✅ Devuelve directamente como texto plano
+                    return PlainTextResponse(content=line.strip())
 
         raise ValueError("No se encontró una línea válida con separadores |")
 
@@ -112,4 +99,3 @@ async def generate(request: GenerationRequest):
                 }
             }
         )
-
