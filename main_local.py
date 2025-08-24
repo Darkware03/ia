@@ -51,7 +51,8 @@ async def generate(request: GenerationRequest):
 
     Devuelve exactamente una sola línea con los siguientes campos es para crear tun token de memecoin, 
    ❗ No escribas encabezados, ni explicaciones, ni saltos de línea❗
-        en este orden:
+        en este orden, debe ser siempre separado por comas y no debe devolver nada mas que la informacion 
+        separada en coma en este orden, NO DEVUELVAS NADA MAS:
 
     name , symbol , description_short , description_long , hashtags_separados_por_coma , emojis_separados_por_coma ,  disclaimers_separados_por_coma
     """
