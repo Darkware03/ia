@@ -49,16 +49,12 @@ async def generate(request: GenerationRequest):
     {base_text}
     \"\"\"
 
-    Devuelve exactamente una sola línea con los siguientes campos, en este orden, separados por `|`:
+    Devuelve exactamente una sola línea con los siguientes campos es para crear tun token de memecoin, 
+   ❗ No escribas encabezados, ni explicaciones, ni saltos de línea❗
+        en este orden:
 
-    name | symbol | description_short | description_long | hashtags_separados_por_coma | emojis_separados_por_coma | image_prompt | disclaimers_separados_por_coma
-
-    Ejemplo de formato:
-    el_bufon | BUFON | Meme político viral | Crítica satírica sobre el poder | #humor,#politica | 😂🔥 | Meme de un político en estilo arte pop | No es consejo financiero,Solo entretenimiento
-
-    ❗ No escribas encabezados, ni explicaciones, ni saltos de línea. Solo el contenido de una sola línea separado por `|`. ❗
+    name , symbol , description_short , description_long , hashtags_separados_por_coma , emojis_separados_por_coma ,  disclaimers_separados_por_coma
     """
-
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
     try:
