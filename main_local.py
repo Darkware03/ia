@@ -78,10 +78,9 @@ async def generate(request: GenerationRequest):
         # Buscar la PRIMERA línea que tenga exactamente 8 separadores `|`
         lines = generated_text.splitlines()
         for line in lines:
-            line = line.strip()
-            if line.count("|") == 8:
-                line = line.strip(" `*")  # Quita posibles símbolos extra
-                return PlainTextResponse(content=line)
+            clean_line = line.strip(" `*")
+            if clean_line.count("|") == 8:
+                return PlainTextResponse(content=clean_line)
 
         raise ValueError("No se encontró una línea válida con separadores `|`.")
 
