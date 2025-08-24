@@ -41,7 +41,6 @@ def health():
 async def generate(request: GenerationRequest):
     base_text = request.text.strip()
 
-    # === Prompt ultra estricto (7 campos, 6 comas) ===
     prompt = f"""
 ### INSTRUCCIONES (LEE Y OBEDECE)
 Genera EXACTAMENTE UNA SOLA LÍNEA en formato CSV con **7** campos en este orden:
@@ -69,12 +68,12 @@ REGLAS OBLIGATORIAS:
         with torch.no_grad():
             output = model.generate(
                 **inputs,
-                max_new_tokens=120,      # suficiente para 1 línea
+                max_new_tokens=160,
                 do_sample=True,
-                temperature=0.5,         # más obediente
+                temperature=0.5,
                 top_p=0.9,
                 top_k=40,
-                repetition_penalty=1.05  # evita repetir el prompt
+                repetition_penalty=1.05
             )
 
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
@@ -82,64 +81,43 @@ REGLAS OBLIGATORIAS:
 
         import re
 
-        # --- Utilidad: limpieza mínima ---
         def clean(s: str) -> str:
             return re.sub(r"\s+", " ", s).strip().strip("`* ")
 
-        # 1) Preferencia: <csv> ... </csv>
-        m = re.search(r"<csv>(.*?)</csv>", generated_text, flags=re.IGNORECASE | re.DOTALL)
+        # 1) patrón principal: tomar la PRIMERA línea no vacía DESPUÉS de </csv>
+        m = re.search(r"</csv>(.*)$", generated_text, flags=re.IGNORECASE | re.DOTALL)
         if m:
-            line = clean(m.group(1))
-            # Validar: 6 comas (=> 7 campos) y sin pipes
+            tail = m.group(1)
+            for raw in tail.splitlines():
+                line = raw.strip()
+                if not line:
+                    continue
+                # ignorar títulos/markdown si aparecieran
+                if line.startswith("#") or line.lower().startswith("respuesta") or line.startswith("---"):
+                    continue
+                # esta es la línea que quieres (ej: "John Doe,,I’m super..., ...")
+                return JSONResponse(content={"success": True, "token": line})
+
+        # 2) fallback: si no hubo </csv>, buscar la primera línea con 6 comas (7 campos)
+        for raw in generated_text.splitlines():
+            line = clean(raw)
             if line.count(",") == 6 and "|" not in line:
                 return JSONResponse(content={"success": True, "token": line})
 
-        # 2) Fallback: primera línea con exactamente 6 comas y sin pipes
-        for raw_line in generated_text.splitlines():
-            line = clean(raw_line)
-            if line.count(",") == 6 and "|" not in line and not line.lower().startswith(("name , symbol", "name, symbol")):
-                return JSONResponse(content={"success": True, "token": line})
-
-        # 3) Fallback: si vino en pipes con 6 pipes, conviértelo a comas
-        for raw_line in generated_text.splitlines():
-            line = clean(raw_line)
+        # 3) fallback: si vino con pipes y hay 6 pipes, convierte a comas
+        for raw in generated_text.splitlines():
+            line = clean(raw)
             if line.count("|") == 6:
                 csv_line = clean(line.replace("|", ","))
-                # Re-validar comas
                 if csv_line.count(",") == 6:
                     return JSONResponse(content={"success": True, "token": csv_line})
 
-        # 4) Fallback: reconstrucción desde bullets name:, symbol:, ...
-        #    Captura tipo: "name: algo", case-insensitive
-        fields = ["name", "symbol", "description_short", "description_long",
-                  "hashtags_separados_por_coma", "emojis_separados_por_coma",
-                  "disclaimers_separados_por_coma"]
-        found = {}
-        for f in fields:
-            # Busca 'f: valor' hasta fin de línea
-            mm = re.search(rf"{f}\s*:\s*(.+)", generated_text, flags=re.IGNORECASE)
-            if mm:
-                # corta en fin de línea y limpia
-                val = clean(mm.group(1).splitlines()[0])
-                # elimina posibles separadores conflictivos
-                val = val.replace("|", " ").replace("\n", " ").strip()
-                found[f] = val
-
-        if found:
-            row = []
-            for f in fields:
-                row.append(found.get(f, ""))  # vacío si no está
-            csv_line = ",".join(row)
-            # Asegura 6 comas
-            if csv_line.count(",") == 6:
-                return JSONResponse(content={"success": True, "token": csv_line})
-
-        # 5) Último recurso: responde éxito=false con el raw (sin 5xx)
+        # 4) si nada, devuelve raw para inspección (sin 5xx)
         return JSONResponse(
             status_code=200,
             content={
                 "success": False,
-                "message": "No se pudo extraer una línea CSV válida (7 campos).",
+                "message": "No se encontró una línea CSV válida después de </csv>.",
                 "raw": generated_text
             }
         )
@@ -147,7 +125,7 @@ REGLAS OBLIGATORIAS:
     except Exception:
         logger.exception("❌ Error procesando la solicitud:")
         return JSONResponse(
-            status_code=200,  # evita 5xx, para que tu JS no truene
+            status_code=200,
             content={
                 "success": False,
                 "message": "Error inesperado en el servidor de generación.",
