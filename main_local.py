@@ -81,46 +81,58 @@ REGLAS OBLIGATORIAS:
 
         import re
 
-        def clean(s: str) -> str:
-            return re.sub(r"\s+", " ", s).strip().strip("`* ")
+        def looks_like_csv(line: str) -> bool:
+            l = line.strip()
+            # Rechaza basura: vacío o solo signos/puntos/markdown
+            if not l or re.fullmatch(r"[-`*_~\.\s]+", l):
+                return False
+            # Debe tener exactamente 6 comas (7 campos)
+            if l.count(",") != 6:
+                return False
+            # No permitir pipes si pedimos CSV
+            if "|" in l:
+                return False
+            return True
 
-        # 1) patrón principal: tomar la PRIMERA línea no vacía DESPUÉS de </csv>
+        # 1) Preferido: tomar la PRIMERA línea válida DESPUÉS de </csv>
+        tail = None
         m = re.search(r"</csv>(.*)$", generated_text, flags=re.IGNORECASE | re.DOTALL)
         if m:
             tail = m.group(1)
             for raw in tail.splitlines():
                 line = raw.strip()
-                if not line:
+                # Ignorar headings/markdown
+                if re.match(r"^\s*#{1,6}\s", line, flags=re.IGNORECASE):
                     continue
-                # ignorar títulos/markdown si aparecieran
-                if line.startswith("#") or line.lower().startswith("respuesta") or line.startswith("---"):
+                if line.lower().startswith(("respuesta", "texto", "token")):
                     continue
-                # esta es la línea que quieres (ej: "John Doe,,I’m super..., ...")
+                if looks_like_csv(line):
+                    return JSONResponse(content={"success": True, "token": line})
+
+        # 2) Fallback: buscar en TODO el texto la primera línea que parezca CSV válido
+        for raw in generated_text.splitlines():
+            line = raw.strip()
+            if looks_like_csv(line):
                 return JSONResponse(content={"success": True, "token": line})
 
-        # 2) fallback: si no hubo </csv>, buscar la primera línea con 6 comas (7 campos)
+        # 3) Fallback: si vino en pipes con 6 pipes, convertir a comas
         for raw in generated_text.splitlines():
-            line = clean(raw)
-            if line.count(",") == 6 and "|" not in line:
-                return JSONResponse(content={"success": True, "token": line})
-
-        # 3) fallback: si vino con pipes y hay 6 pipes, convierte a comas
-        for raw in generated_text.splitlines():
-            line = clean(raw)
+            line = raw.strip(" `*")
             if line.count("|") == 6:
-                csv_line = clean(line.replace("|", ","))
-                if csv_line.count(",") == 6:
+                csv_line = re.sub(r"\s*\|\s*", ",", line)  # pipes -> comas
+                if looks_like_csv(csv_line):
                     return JSONResponse(content={"success": True, "token": csv_line})
 
-        # 4) si nada, devuelve raw para inspección (sin 5xx)
+        # 4) Nada válido: devuelve raw para inspección
         return JSONResponse(
             status_code=200,
             content={
                 "success": False,
-                "message": "No se encontró una línea CSV válida después de </csv>.",
+                "message": "No se encontró una línea CSV válida.",
                 "raw": generated_text
             }
         )
+
 
     except Exception:
         logger.exception("❌ Error procesando la solicitud:")
