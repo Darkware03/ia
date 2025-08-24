@@ -78,52 +78,6 @@ REGLAS OBLIGATORIAS:
 
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
-
-        import re
-
-        def looks_like_csv(line: str) -> bool:
-            l = line.strip()
-            # Rechaza basura: vacío o solo signos/puntos/markdown
-            if not l or re.fullmatch(r"[-`*_~\.\s]+", l):
-                return False
-            # Debe tener exactamente 6 comas (7 campos)
-            if l.count(",") != 6:
-                return False
-            # No permitir pipes si pedimos CSV
-            if "|" in l:
-                return False
-            return True
-
-        # 1) Preferido: tomar la PRIMERA línea válida DESPUÉS de </csv>
-        tail = None
-        m = re.search(r"</csv>(.*)$", generated_text, flags=re.IGNORECASE | re.DOTALL)
-        if m:
-            tail = m.group(1)
-            for raw in tail.splitlines():
-                line = raw.strip()
-                # Ignorar headings/markdown
-                if re.match(r"^\s*#{1,6}\s", line, flags=re.IGNORECASE):
-                    continue
-                if line.lower().startswith(("respuesta", "texto", "token")):
-                    continue
-                if looks_like_csv(line):
-                    return JSONResponse(content={"success": True, "token": line})
-
-        # 2) Fallback: buscar en TODO el texto la primera línea que parezca CSV válido
-        for raw in generated_text.splitlines():
-            line = raw.strip()
-            if looks_like_csv(line):
-                return JSONResponse(content={"success": True, "token": line})
-
-        # 3) Fallback: si vino en pipes con 6 pipes, convertir a comas
-        for raw in generated_text.splitlines():
-            line = raw.strip(" `*")
-            if line.count("|") == 6:
-                csv_line = re.sub(r"\s*\|\s*", ",", line)  # pipes -> comas
-                if looks_like_csv(csv_line):
-                    return JSONResponse(content={"success": True, "token": csv_line})
-
-        # 4) Nada válido: devuelve raw para inspección
         return JSONResponse(
             status_code=200,
             content={
