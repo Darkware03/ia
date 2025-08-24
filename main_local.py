@@ -75,23 +75,59 @@ async def generate(request: GenerationRequest):
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         logger.info("🧪 RAW GENERATED TEXT:\n%s", generated_text)
 
-        # ✅ Buscar la primera línea que tenga exactamente 8 pipes (|) usando regex
-        match = re.search(r"^.*?\|.*?\|.*?\|.*?\|.*?\|.*?\|.*?\|.*?$", generated_text, re.MULTILINE)
-        if match:
-            linea_token = match.group(0).strip(" `*")
-            return JSONResponse(content={"success": True, "token": linea_token})
+        # --- Utilidades de limpieza/chequeo ---
+        def normalize(s: str) -> str:
+            # quita asteriscos/backticks, dobles espacios, y lower-case para comparar
+            s2 = s.replace("`", " ").replace("*", " ")
+            s2 = re.sub(r"\s+", " ", s2).strip().lower()
+            return s2
 
-        # ⛔ Si no se encuentra una línea válida, retornar respuesta fallback (con texto completo para debug)
+        HEADER_CANON = normalize(
+            "name | symbol | description_short | description_long | "
+            "hashtags_separados_por_coma | emojis_separados_por_coma | "
+            "image_prompt | disclaimers_separados_por_coma"
+        )
+
+        def is_header_line(line: str) -> bool:
+            n = normalize(line)
+            if HEADER_CANON in n:
+                return True
+            if n.startswith("ejemplo de formato"):
+                return True
+            if n.startswith("name | symbol"):
+                return True
+            return False
+
+        def looks_like_token_line(line: str) -> bool:
+            l = line.strip(" `*")
+            return (l.count("|") == 8) and (not is_header_line(l))
+
+        # --- 1) Preferencia: línea justo después de "Token:" ---
+        m = re.search(r"token\s*:\s*\n\s*(.+)", generated_text, flags=re.IGNORECASE)
+        if m:
+            after_token = m.group(1).strip()
+            # Puede que la línea posterior tenga más texto; separar hasta el fin de línea
+            first_line = after_token.splitlines()[0].strip(" `*")
+            if looks_like_token_line(first_line):
+                return JSONResponse(content={"success": True, "token": first_line})
+
+        # --- 2) Fallback: primera línea en TODO el texto con 8 pipes, excluyendo encabezados ---
+        for raw_line in generated_text.splitlines():
+            line = raw_line.strip(" `*")
+            if looks_like_token_line(line):
+                return JSONResponse(content={"success": True, "token": line})
+
+        # --- 3) Si nada matchea, devolvemos el raw para inspección (pero sin error 5xx) ---
         return JSONResponse(
             status_code=200,
             content={
                 "success": False,
-                "message": "No se encontró línea válida con separadores `|`, pero el texto fue generado.",
+                "message": "No se encontró una línea válida con separadores `|`.",
                 "raw": generated_text
             }
         )
 
-    except Exception as e:
+    except Exception:
         logger.exception("❌ Error procesando la solicitud:")
         return JSONResponse(
             status_code=502,
@@ -104,5 +140,3 @@ async def generate(request: GenerationRequest):
                 }
             }
         )
-
-
